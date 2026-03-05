@@ -125,3 +125,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* react-pdf text layer highlight for source preview */
+.react-pdf__Page__textContent mark.pdf-highlight {
+  background-color: rgba(255, 220, 0, 0.45);
+  color: transparent;
+  border-radius: 2px;
+  padding: 0;
+  mix-blend-mode: multiply;
+}
+
+.react-pdf__Page__textContent ::selection {
+  background-color: rgba(0, 100, 255, 0.25);
+}

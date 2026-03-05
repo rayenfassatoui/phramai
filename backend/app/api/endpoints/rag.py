@@ -260,6 +260,8 @@ async def get_document_preview(
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
 ):
     """Get the full reconstructed text of a document for preview."""
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
     content = await rag_service.get_document_preview(tenant_id, filename)
     if not content:
         raise HTTPException(status_code=404, detail=f"Document '{filename}' not found.")
@@ -276,6 +278,9 @@ async def serve_document_file(
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
 ):
     """Serve the original uploaded PDF file for in-browser preview."""
+    # Guard against path traversal attacks
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
     file_path = Path(settings.UPLOAD_DIR) / tenant_id / filename
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"File '{filename}' not found.")
@@ -293,6 +298,8 @@ async def delete_tenant_document(
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
 ):
     """Delete all chunks for a document from the tenant's vector store."""
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
     chunks_deleted = await rag_service.delete_tenant_document(tenant_id, filename)
     # Also remove the original PDF file from disk
     pdf_path = Path(settings.UPLOAD_DIR) / tenant_id / filename

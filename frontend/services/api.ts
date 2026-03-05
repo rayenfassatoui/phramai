@@ -250,3 +250,22 @@ export async function deleteTenantDocument(
   if (!res.ok) throw new Error(`Failed to delete document: ${res.status}`);
   return res.json() as Promise<DeleteDocumentResponse>;
 }
+
+// ── Document File Serving ────────────────────────────────────────────────────
+
+/**
+ * Fetch the original uploaded PDF as a Blob for in-browser preview.
+ * We fetch via JS (not bare URL) because the endpoint requires X-API-Key.
+ */
+export async function fetchDocumentBlob(
+  filename: string,
+  apiKey: string,
+): Promise<string> {
+  const res = await fetch(
+    `${FASTAPI_URL}/api/tenant-documents/${encodeURIComponent(filename)}/file`,
+    { headers: { 'X-API-Key': apiKey } },
+  );
+  if (!res.ok) throw new Error(`Failed to fetch document file: ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}

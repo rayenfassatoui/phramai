@@ -24,6 +24,7 @@ RAG-based application for B'right Tunisie Full-Stack Senior Developer technical 
 - Custom per-tenant color theming and branding
 - Complete document CRUD operations
 - Auto-refreshing UI after document processing
+- PDF source preview with text highlighting (react-pdf page viewer with yellow marker on source passages)
 
 ## Tech Stack
 
@@ -90,6 +91,7 @@ Reference `.env.example` for all required configurations. Key variables include:
 | GET | /api/metrics/{tenant_id} | Tenant query metrics |
 | GET | /api/tenant-documents | List tenant's uploaded documents |
 | GET | /api/tenant-documents/{filename}/preview | Preview uploaded document |
+| GET | /api/tenant-documents/{filename}/file | Serve original PDF file |
 | DELETE | /api/tenant-documents/{filename} | Delete uploaded document |
 | POST | /api/chat/sessions | Create chat session |
 | GET | /api/chat/sessions | List chat sessions |

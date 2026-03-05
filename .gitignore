@@ -1,9 +1,6 @@
 # OS
 .DS_Store
 Thumbs.db
-nul
-NUL
-%TEMP%/
 
 # IDE
 .vscode/*
@@ -38,3 +35,22 @@ dist-ssr/
 # Logs
 *.log
 logs/
+
+# Database
+*.db
+*.sqlite3
+
+# AI tooling artifacts
+.sisyphus/
+.sisyphus-evidence.txt
+agents.md
+
+# Windows artifacts
+NUL
+%TEMP%/
+
+# Uploads (runtime data)
+backend/uploads/
+
+# Virtual environments
+venv/

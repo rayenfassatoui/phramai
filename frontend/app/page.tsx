@@ -239,7 +239,7 @@ export default function ChatPage() {
                       {message.role === "assistant" && (
                         <div className="pl-4 md:pl-16 pr-4 flex items-center gap-2 flex-wrap">
                           {confidence !== null && confidence > 0 && <ConfidenceScore score={confidence} />}
-                          {sources.length > 0 && <SourceList sources={sources} />}
+                          {sources.length > 0 && <SourceList sources={sources} apiKey={selectedTenant.key} />}
                         </div>
                       )}
                       {message.role === "assistant" && !(index === messages.length - 1 && isStreaming) && sources.length === 0 && (!message.parts || message.parts.every((p) => (p as { type: string }).type !== "text" || !(p as { type: string; text: string }).text?.trim())) && (
