@@ -1,0 +1,25 @@
+Task 3: Pydantic v2 Schemas Verification
+==========================================
+
+COMPLETED: 2025-03-04
+
+Files Created:
+- backend/app/schemas/rag.py
+  * QueryRequest (question: str)
+  * QueryResponse (answer: str, sources: list[SourceDocument], tenant_id: str, duration_ms: float)
+  * SourceDocument (content: str, metadata: dict[str, str])
+  * IngestRequest (document_name: str)
+  * IngestResponse (document_id: str, chunks_created: int, tenant_id: str)
+  * MetricsResponse (tenant_id: str, total_queries: int, avg_response_time_ms: float)
+
+Verification Command:
+uv run python -c "from app.schemas.rag import QueryRequest, QueryResponse, SourceDocument, IngestResponse, MetricsResponse; q = QueryRequest(question='test'); s = SourceDocument(content='text', metadata={'doc_name': 'test.txt'}); r = QueryResponse(answer='ans', sources=[s], tenant_id='t1', duration_ms=100.0); print('SCHEMAS_OK')"
+
+Result: SCHEMAS_OK ✓
+
+Notes:
+- All schemas use Pydantic BaseModel
+- No Any types
+- Used dict[str, str] syntax for type hints (modern Python 3.10+)
+- QueryResponse includes model_config = ConfigDict(from_attributes=True) for ORM compatibility
+- Following existing patterns from backend/app/schemas/user.py and document.py

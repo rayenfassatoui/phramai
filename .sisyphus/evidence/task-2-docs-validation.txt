@@ -1,0 +1,4 @@
+ 2615 backend/test_docs/clinical_trials.txt
+ 2579 backend/test_docs/drug_approval_process.txt
+ 3704 backend/test_docs/gmp_guidelines.txt
+ 8898 total

@@ -1,0 +1,40 @@
+# OS
+.DS_Store
+Thumbs.db
+nul
+NUL
+%TEMP%/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[oc]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Logs
+*.log
+logs/
