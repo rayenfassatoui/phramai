@@ -267,7 +267,7 @@ export default function ChatPage() {
         <div className="p-4 text-[10px] text-center text-muted-foreground border-t border-border bg-muted/20">Regulatory Assistant v1.0 &bull; Confidential</div>
       </aside>
 
-      <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+      <ResizablePanelGroup orientation="horizontal" className="flex-1 overflow-hidden">
         <ResizablePanel defaultSize={citationSource ? "65%" : "100%"} minSize="30%" className="flex">
           <main className="flex flex-1 flex-col overflow-hidden bg-background relative h-full">
             <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
