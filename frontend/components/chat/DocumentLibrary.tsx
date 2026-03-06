@@ -118,7 +118,7 @@ export function DocumentLibrary({ apiKey }: DocumentLibraryProps) {
                       {doc.last_page && ` \u00b7 ${doc.last_page} pages`}
                     </p>
                   </div>
-                  <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0">
                     <Button
                       variant="ghost"
                       size="sm"
