@@ -99,7 +99,7 @@ export async function POST(req: Request) {
                   id: 'sources-' + Math.random().toString(36).slice(2, 9),
                   data: {
                     type: 'sources',
-                    sources: event.sources,
+                    sources: event.sources.map((s, i) => ({ ...s, index: i + 1 })),
                     confidence_score: event.confidence_score ?? 0,
                   },
                 });

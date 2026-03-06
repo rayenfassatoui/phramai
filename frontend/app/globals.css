@@ -138,3 +138,15 @@
 .react-pdf__Page__textContent ::selection {
   background-color: rgba(0, 100, 255, 0.25);
 }
+
+/* Streamdown inline segments for citation-interleaved text */
+.streamdown-chat-inline {
+  display: inline;
+}
+.streamdown-chat-inline > * {
+  display: inline;
+}
+.streamdown-chat-inline p {
+  display: inline;
+  margin: 0;
+}

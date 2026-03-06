@@ -25,6 +25,10 @@ RAG-based application for B'right Tunisie Full-Stack Senior Developer technical 
 - Complete document CRUD operations
 - Auto-refreshing UI after document processing
 - PDF source preview with text highlighting (react-pdf page viewer with yellow marker on source passages)
+- Inline citation tags (`[1]`, `[2]`) in AI responses — click to open source in PDF sidebar
+- Resizable citation sidebar with drag handle for adjustable reading width (react-resizable-panels)
+- Mobile-responsive citation overlay (full-screen sheet on mobile, resizable panel on desktop)
+- Tenant-switch conversation isolation guard (prevents cross-tenant conversation cloning)
 
 ## Tech Stack
 

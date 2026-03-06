@@ -78,6 +78,15 @@ Instead of a single table with a `tenant_id` column, we use separate tables for 
 ### PDF Processing Pipeline
 We use PyMuPDF for high-fidelity text extraction. Processing is handled asynchronously with status polling, ensuring the UI remains responsive during large document ingestions.
 
+### Inline Citation System
+The citation pipeline ensures full auditability from LLM output to source PDF. The backend RAG prompt instructs the LLM to place numbered markers (`[1]`, `[2]`) inline within its response, corresponding to `[{i+1}]`-prefixed source documents from `format_docs()`. The SSE bridge in `route.ts` attaches an `index` field to each source object. On the frontend, `ChatMessage` uses a regex (`/\[(\d+)\]/g`) to split streamed text into segments — plain text renders via `Streamdown`, citation markers render as clickable `CitationTag` badges. Clicking a tag triggers `handleCitationClick`, which resolves the source by index and opens `CitationSidebar` — a right-side panel containing a `react-pdf` page viewer with yellow-highlighted source passages for precise traceability.
+
+### Resizable Citation Sidebar
+The citation sidebar uses `react-resizable-panels` (v4) wrapped by a shadcn `resizable.tsx` component. When a citation is active, the main chat and citation panels render inside a `ResizablePanelGroup` with a draggable handle. Panel sizes are expressed as percentage strings (`"65%"` / `"35%"` default split, `"15%"` min, `"80%"` max) to work correctly with the v4 API. On mobile viewports (`md:` breakpoint), the citation renders as a full-screen overlay instead, ensuring usability across device sizes.
+
+### Tenant-Switch Conversation Isolation
+A race condition exists when switching tenants while a conversation is open: React batches state updates from two `useEffect` hooks in the same commit, causing the persistence effect to see stale messages with the new tenant's API key — cloning the conversation into the wrong tenant. The fix introduces a `messagesTenantKeyRef` that tracks which tenant owns the current in-memory messages. It is updated only in three legitimate mutation points (`handleSendMessage`, `handleSelectSession`, `handleNewSession`). The persistence effect checks `messagesTenantKeyRef.current !== selectedTenant.key` and bails out on mismatch, preventing cross-tenant writes.
+
 ## Implemented Beyond Spec
 - SSE streaming for real-time responses.
 - Native PDF upload and parsing pipeline.
@@ -86,6 +95,10 @@ We use PyMuPDF for high-fidelity text extraction. Processing is handled asynchro
 - Confidence scores based on retrieval similarity.
 - Document Library with integrated preview and CRUD operations.
 - Dynamic per-tenant theming.
+- Inline citation tags with click-to-open PDF sidebar for source auditability.
+- Resizable citation sidebar with drag handle (react-resizable-panels).
+- Mobile-responsive citation overlay (full-screen on mobile, resizable panel on desktop).
+- Tenant-switch conversation isolation guard preventing cross-tenant data leakage.
 
 ## Proposed Improvements
 - **Hybrid Search**: Implement BM25 keyword search alongside semantic search to improve recall for specific regulatory codes.

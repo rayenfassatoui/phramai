@@ -118,6 +118,10 @@ class RAGService:
                     "provided context to answer questions about EMA, FDA, and ICH "
                     "guidelines. Be precise and cite specific regulations when possible. "
                     "If the context does not contain enough information, say so clearly.\n"
+                    "IMPORTANT: Each piece of context is labeled with a source number like [1], [2], etc. "
+                    "When you use information from a source, place the citation marker (e.g. [1]) inline "
+                    "right after the relevant sentence or claim. Use multiple markers if a statement draws "
+                    "from multiple sources. Always include at least one citation in your answer.\n"
                     "Context: {context}",
                 ),
                 ("human", "{question}"),
@@ -125,7 +129,9 @@ class RAGService:
         )
 
         def format_docs(docs: list[Document]) -> str:
-            return "\n\n".join(doc.page_content for doc in docs)
+            return "\n\n".join(
+                f"[{i + 1}] {doc.page_content}" for i, doc in enumerate(docs)
+            )
 
         rag_chain = (
             {
@@ -190,6 +196,10 @@ class RAGService:
                     "provided context to answer questions about EMA, FDA, and ICH "
                     "guidelines. Be precise and cite specific regulations when possible. "
                     "If the context does not contain enough information, say so clearly.\n"
+                    "IMPORTANT: Each piece of context is labeled with a source number like [1], [2], etc. "
+                    "When you use information from a source, place the citation marker (e.g. [1]) inline "
+                    "right after the relevant sentence or claim. Use multiple markers if a statement draws "
+                    "from multiple sources. Always include at least one citation in your answer.\n"
                     "Context: {context}",
                 ),
                 ("human", "{question}"),
@@ -197,7 +207,9 @@ class RAGService:
         )
 
         def format_docs(docs: list[Document]) -> str:
-            return "\n\n".join(doc.page_content for doc in docs)
+            return "\n\n".join(
+                f"[{i + 1}] {doc.page_content}" for i, doc in enumerate(docs)
+            )
 
         rag_chain = (
             {
