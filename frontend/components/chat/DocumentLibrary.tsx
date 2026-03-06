@@ -106,23 +106,23 @@ export function DocumentLibrary({ apiKey }: DocumentLibraryProps) {
               {documents.map((doc: TenantDocumentInfo) => (
                 <div
                   key={doc.filename}
-                  className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors hover:bg-muted/50"
+                  className="group flex items-center gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50 overflow-hidden"
                 >
                   {getFileIcon(doc.filename)}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate text-foreground">
-                      {doc.filename}
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p className="text-xs font-medium truncate text-foreground" title={doc.filename}>
+                      {doc.filename.length > 25 ? doc.filename.slice(0, 22) + '...' : doc.filename}
                     </p>
                     <p className="text-[10px] text-muted-foreground">
                       {doc.chunk_count} chunks
                       {doc.last_page && ` \u00b7 ${doc.last_page} pages`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0 ml-auto">
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0"
+                      className="h-6 w-6 p-0 opacity-70 hover:opacity-100"
                       onClick={() => handlePreview(doc.filename)}
                       aria-label={`Preview ${doc.filename}`}
                     >
@@ -131,7 +131,7 @@ export function DocumentLibrary({ apiKey }: DocumentLibraryProps) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      className="h-6 w-6 p-0 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
                       onClick={() => deleteMutation.mutate(doc.filename)}
                       disabled={deleteMutation.isPending}
                       aria-label={`Delete ${doc.filename}`}
