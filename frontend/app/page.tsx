@@ -55,6 +55,7 @@ export default function ChatPage() {
   const queryClient = useQueryClient();
   const sessionIdRef = React.useRef<string | null>(null);
   const persistedCountRef = React.useRef(0);
+  const messagesTenantKeyRef = React.useRef<string>(selectedTenant.key);
   const { messages, setMessages, sendMessage, status } = useChat({ transport: new DefaultChatTransport({ api: "/api/chat" }) });
   const isStreaming = status === "submitted" || status === "streaming";
 
@@ -64,6 +65,10 @@ export default function ChatPage() {
     sessionIdRef.current = null;
     persistedCountRef.current = 0;
     setActiveSessionId(null);
+    // NOTE: messagesTenantKeyRef is intentionally NOT updated here.
+    // It retains the OLD tenant key so the persistence effect can detect
+    // that the current messages belong to a different tenant and bail out.
+    // It only gets updated when messages are genuinely created for the new tenant.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTenantId]);
 
@@ -73,6 +78,13 @@ export default function ChatPage() {
     const newMessages = messages.slice(persistedCountRef.current);
     if (newMessages.length === 0) return;
 
+    // Guard: only persist if messages belong to the current tenant.
+    // After a tenant switch, messagesTenantKeyRef still holds the OLD key
+    // while selectedTenant.key is the NEW key — mismatch blocks persistence.
+    if (messagesTenantKeyRef.current !== selectedTenant.key) return;
+
+    const apiKey = selectedTenant.key;
+
     const persist = async () => {
       try {
         // Auto-create session if none exists
@@ -81,14 +93,20 @@ export default function ChatPage() {
           const title = firstUserMsg
             ? (firstUserMsg.parts?.find((p) => (p as { type: string }).type === "text") as { text?: string } | undefined)?.text?.slice(0, 60) ?? "New Chat"
             : "New Chat";
-          const session = await createChatSession(selectedTenant.key, title);
+          const session = await createChatSession(apiKey, title);
+
+          // Bail if tenant changed during the async call
+          if (messagesTenantKeyRef.current !== apiKey) return;
+
           sessionIdRef.current = session.id;
           setActiveSessionId(session.id);
-          queryClient.invalidateQueries({ queryKey: ["chatSessions", selectedTenant.key] });
+          queryClient.invalidateQueries({ queryKey: ["chatSessions", apiKey] });
         }
 
         // Persist each new message
         for (const msg of newMessages) {
+          if (messagesTenantKeyRef.current !== apiKey) return;
+
           const textContent = msg.parts
             ?.filter((p) => (p as { type: string }).type === "text")
             .map((p) => (p as { type: string; text: string }).text)
@@ -96,7 +114,7 @@ export default function ChatPage() {
           const customPart = msg.parts?.find((p) => (p as { type: string }).type === "data-custom") as CustomDataPart | undefined;
           const sources = customPart?.data?.sources ?? null;
           const confidence = customPart?.data?.confidence_score ?? null;
-          await addChatMessage(sessionIdRef.current, selectedTenant.key, msg.role, textContent, sources, confidence);
+          await addChatMessage(sessionIdRef.current, apiKey, msg.role, textContent, sources, confidence);
         }
         persistedCountRef.current = messages.length;
       } catch {
@@ -106,7 +124,7 @@ export default function ChatPage() {
     persist();
   }, [isStreaming, messages, selectedTenant.key, queryClient]);
 
-  const handleSendMessage = (text: string) => { sendMessage({ text }, { body: { apiKey: selectedTenant.key } }); };
+  const handleSendMessage = (text: string) => { messagesTenantKeyRef.current = selectedTenant.key; sendMessage({ text }, { body: { apiKey: selectedTenant.key } }); };
 
   const handleSelectSession = async (session: ChatSessionResponse) => {
     setActiveSessionId(session.id);
@@ -135,6 +153,7 @@ export default function ChatPage() {
       setMessages(uiMessages);
       sessionIdRef.current = session.id;
       persistedCountRef.current = uiMessages.length;
+      messagesTenantKeyRef.current = selectedTenant.key;
     } catch {
       // If fetch fails, still show the session as selected but with empty messages
     }
@@ -144,6 +163,7 @@ export default function ChatPage() {
     sessionIdRef.current = session.id;
     persistedCountRef.current = 0;
     setActiveSessionId(session.id);
+    messagesTenantKeyRef.current = selectedTenant.key;
   };
 
   // Extract confidence score from the last assistant message
