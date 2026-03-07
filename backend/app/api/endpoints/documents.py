@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import RATE_AI, RATE_READ, RATE_WRITE, limiter
 from app.db.database import get_db
 from app.schemas.document import (
     DocumentCreate,
@@ -24,7 +25,9 @@ def _svc(db: AsyncSession = Depends(get_db)) -> DocumentService:
     status_code=status.HTTP_201_CREATED,
     summary="Create a document (optionally with a pre-computed embedding)",
 )
+@limiter.limit(RATE_WRITE)
 async def create_document(
+    request: Request,
     payload: DocumentCreate,
     svc: DocumentService = Depends(_svc),
 ) -> DocumentRead:
@@ -37,7 +40,9 @@ async def create_document(
     response_model=list[DocumentRead],
     summary="List documents with pagination",
 )
+@limiter.limit(RATE_READ)
 async def list_documents(
+    request: Request,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     svc: DocumentService = Depends(_svc),
@@ -51,7 +56,9 @@ async def list_documents(
     response_model=DocumentRead,
     summary="Get a single document by ID",
 )
+@limiter.limit(RATE_READ)
 async def get_document(
+    request: Request,
     document_id: int,
     svc: DocumentService = Depends(_svc),
 ) -> DocumentRead:
@@ -64,7 +71,9 @@ async def get_document(
     response_model=DocumentRead,
     summary="Partially update a document",
 )
+@limiter.limit(RATE_WRITE)
 async def update_document(
+    request: Request,
     document_id: int,
     payload: DocumentUpdate,
     svc: DocumentService = Depends(_svc),
@@ -78,7 +87,9 @@ async def update_document(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a document",
 )
+@limiter.limit(RATE_WRITE)
 async def delete_document(
+    request: Request,
     document_id: int,
     svc: DocumentService = Depends(_svc),
 ) -> None:
@@ -90,8 +101,10 @@ async def delete_document(
     response_model=list[DocumentReadWithScore],
     summary="Semantic similarity search using a query embedding vector",
 )
+@limiter.limit(RATE_AI)
 async def similarity_search(
-    request: SimilaritySearchRequest,
+    request: Request,
+    body: SimilaritySearchRequest,
     svc: DocumentService = Depends(_svc),
 ) -> list[DocumentReadWithScore]:
-    return await svc.similarity_search(request)
+    return await svc.similarity_search(body)

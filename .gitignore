@@ -1,21 +1,25 @@
-# OS
+# ── OS ───────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# IDE
+# ── IDE / Editor ─────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
+*.swp
+*.swo
 
-# Environment variables
+# ── Environment variables ────────────────────────────
 .env
 .env.*
 !.env.example
 
-# Python
+# ── Python ───────────────────────────────────────────
 __pycache__/
-*.py[oc]
+*.py[cod]
+*.pyo
 .venv/
 dist/
 build/
@@ -23,31 +27,49 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
 .mypy_cache/
 .ruff_cache/
 
-# Node
+# ── Node / Frontend ──────────────────────────────────
 node_modules/
-dist/
+.next/
+out/
 dist-ssr/
 *.tsbuildinfo
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+.vercel
+bun-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# Logs
+# ── Docker ───────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Logs ─────────────────────────────────────────────
 *.log
 logs/
 
-# Database
+# ── Database ─────────────────────────────────────────
 *.db
 *.sqlite3
 
-# AI tooling artifacts
-.sisyphus/
-.sisyphus-evidence.txt
-agents.md
+# ── Azure / Deploy artifacts ─────────────────────────
+*-publish-profile.xml
+backend-logs*/
+backend-logs*.zip
 
-# Windows artifacts
+# ── Uploads (local dev PDFs) ─────────────────────────
+backend/uploads/
+
+# ── Misc ─────────────────────────────────────────────
+nul
 NUL
-%TEMP%/
 
 # Uploads (runtime data)
 backend/uploads/

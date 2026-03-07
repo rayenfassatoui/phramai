@@ -7,6 +7,7 @@ from time import perf_counter
 
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncEngine
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -144,13 +145,13 @@ class RAGService:
         )
 
         try:
-            retrieved_docs = await retriever.ainvoke(question)
+            retrieved_docs = await self._retrieve_with_retry(retriever, question)
         except Exception:
             logger.error("Document retrieval failed for tenant %s.", tenant_id, exc_info=True)
             raise RuntimeError("Failed to retrieve relevant documents.")
 
         try:
-            answer = await rag_chain.ainvoke(question)
+            answer = await self._llm_invoke_with_retry(rag_chain, question)
         except Exception:
             logger.error("LLM generation failed for tenant %s.", tenant_id, exc_info=True)
             raise RuntimeError(
@@ -256,6 +257,26 @@ class RAGService:
         # Send completion event
         yield f"data: {json.dumps({'type': 'done', 'duration_ms': duration_ms, 'confidence_score': confidence})}\n\n"
         yield "data: [DONE]\n\n"
+
+    @staticmethod
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception_type((TimeoutError, ConnectionError, RuntimeError)),
+        reraise=True,
+    )
+    async def _retrieve_with_retry(retriever, question: str) -> list[Document]:
+        return await retriever.ainvoke(question)
+
+    @staticmethod
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception_type((TimeoutError, ConnectionError, RuntimeError)),
+        reraise=True,
+    )
+    async def _llm_invoke_with_retry(chain, question: str) -> str:
+        return await chain.ainvoke(question)
 
     def _build_sources(self, docs: list[Document]) -> list[SourceDocument]:
         sources: list[SourceDocument] = []

@@ -8,6 +8,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",
+    "azure-storage-blob>=12.19.0",
     "fastapi[standard]>=0.135.1",
     "httpx>=0.28.1",
     "langchain>=1.2.10",
@@ -20,6 +21,8 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "sqlalchemy>=2.0.48",
     "pymupdf>=1.25.0",
+    "slowapi>=0.1.9",
+    "tenacity>=8.2.0",
 ]
 
 [dependency-groups]

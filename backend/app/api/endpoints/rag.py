@@ -3,12 +3,13 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.api_key import get_tenant_from_api_key
 from app.core.config import settings
+from app.core.rate_limit import RATE_AI, RATE_READ, RATE_UPLOAD, RATE_WRITE, limiter
 from app.db.database import engine, get_db
 from app.schemas.rag import (
     DeleteDocumentResponse,
@@ -24,8 +25,18 @@ from app.schemas.rag import (
     TenantDocumentListResponse,
 )
 from app.repositories.query_log_repository import QueryLogRepository
+from app.services.blob_service import BlobStorageService
 from app.services.pdf_service import PDFService
 from app.services.rag_service import RAGService
+
+
+def _use_blob() -> bool:
+    """Return True when Azure Blob Storage is configured."""
+    return bool(settings.AZURE_STORAGE_CONNECTION_STRING)
+
+
+def _get_blob_service() -> BlobStorageService:
+    return BlobStorageService(settings=settings)
 
 router = APIRouter(tags=["rag"])
 
@@ -51,7 +62,9 @@ async def health_check():
 
 
 @router.post("/query", response_model=QueryResponse)
+@limiter.limit(RATE_AI)
 async def query(
+    request: Request,
     body: QueryRequest,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
@@ -75,7 +88,9 @@ async def query(
 
 
 @router.post("/query/stream")
+@limiter.limit(RATE_AI)
 async def query_stream(
+    request: Request,
     body: QueryRequest,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
@@ -93,7 +108,9 @@ async def query_stream(
 
 
 @router.post("/documents/ingest", response_model=IngestResponse)
+@limiter.limit(RATE_AI)
 async def ingest_document(
+    request: Request,
     body: IngestRequest,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
@@ -175,7 +192,9 @@ async def _process_pdf_background(
     response_model=PDFUploadResponse,
     status_code=202,
 )
+@limiter.limit(RATE_UPLOAD)
 async def upload_pdf(
+    request: Request,
     file: UploadFile,
     background_tasks: BackgroundTasks,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
@@ -192,10 +211,14 @@ async def upload_pdf(
     if not content[:5].startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="File does not appear to be a valid PDF.")
 
-    # Persist original PDF to disk for later preview/serving
-    upload_dir = Path(settings.UPLOAD_DIR) / tenant_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    (upload_dir / file.filename).write_bytes(content)
+    # Persist original PDF for later preview/serving
+    if _use_blob():
+        blob_svc = _get_blob_service()
+        await blob_svc.upload(tenant_id, file.filename, content)
+    else:
+        upload_dir = Path(settings.UPLOAD_DIR) / tenant_id
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        (upload_dir / file.filename).write_bytes(content)
 
 
     job_id = str(uuid.uuid4())
@@ -219,7 +242,9 @@ async def upload_pdf(
 
 
 @router.get("/documents/jobs/{job_id}", response_model=PDFJobStatusResponse)
+@limiter.limit(RATE_READ)
 async def get_job_status(
+    request: Request,
     job_id: str,
     _: Annotated[str, Depends(get_tenant_from_api_key)],
 ):
@@ -231,7 +256,9 @@ async def get_job_status(
 
 
 @router.get("/metrics/{tenant_id}", response_model=MetricsResponse)
+@limiter.limit(RATE_READ)
 async def get_metrics(
+    request: Request,
     tenant_id: str,
     _: Annotated[str, Depends(get_tenant_from_api_key)],
     query_log_repo: Annotated[QueryLogRepository, Depends(get_query_log_repo)],
@@ -241,7 +268,9 @@ async def get_metrics(
 
 
 @router.get("/tenant-documents", response_model=TenantDocumentListResponse)
+@limiter.limit(RATE_READ)
 async def list_tenant_documents(
+    request: Request,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
 ):
@@ -254,7 +283,9 @@ async def list_tenant_documents(
 
 
 @router.get("/tenant-documents/{filename}/preview", response_model=DocumentPreviewResponse)
+@limiter.limit(RATE_READ)
 async def get_document_preview(
+    request: Request,
     filename: str,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
@@ -273,7 +304,9 @@ async def get_document_preview(
 
 
 @router.get("/tenant-documents/{filename}/file")
+@limiter.limit(RATE_READ)
 async def serve_document_file(
+    request: Request,
     filename: str,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
 ):
@@ -281,6 +314,21 @@ async def serve_document_file(
     # Guard against path traversal attacks
     if '..' in filename or '/' in filename or '\\' in filename:
         raise HTTPException(status_code=400, detail="Invalid filename.")
+
+    if _use_blob():
+        blob_svc = _get_blob_service()
+        if not await blob_svc.exists(tenant_id, filename):
+            raise HTTPException(status_code=404, detail=f"File '{filename}' not found.")
+        data = await blob_svc.download(tenant_id, filename)
+        return StreamingResponse(
+            iter([data]),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename=\"{filename}\"",
+                "Content-Length": str(len(data)),
+            },
+        )
+
     file_path = Path(settings.UPLOAD_DIR) / tenant_id / filename
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"File '{filename}' not found.")
@@ -292,7 +340,9 @@ async def serve_document_file(
     )
 
 @router.delete("/tenant-documents/{filename}", response_model=DeleteDocumentResponse)
+@limiter.limit(RATE_WRITE)
 async def delete_tenant_document(
+    request: Request,
     filename: str,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     rag_service: Annotated[RAGService, Depends(get_rag_service)],
@@ -301,10 +351,19 @@ async def delete_tenant_document(
     if '..' in filename or '/' in filename or '\\' in filename:
         raise HTTPException(status_code=400, detail="Invalid filename.")
     chunks_deleted = await rag_service.delete_tenant_document(tenant_id, filename)
-    # Also remove the original PDF file from disk
-    pdf_path = Path(settings.UPLOAD_DIR) / tenant_id / filename
-    if pdf_path.is_file():
-        pdf_path.unlink()
+    # Also remove the original PDF from storage
+    if _use_blob():
+        blob_svc = _get_blob_service()
+        try:
+            await blob_svc.delete(tenant_id, filename)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to delete blob %s/%s", tenant_id, filename, exc_info=True
+            )
+    else:
+        pdf_path = Path(settings.UPLOAD_DIR) / tenant_id / filename
+        if pdf_path.is_file():
+            pdf_path.unlink()
     if chunks_deleted == 0:
         raise HTTPException(status_code=404, detail=f"Document '{filename}' not found.")
     return DeleteDocumentResponse(

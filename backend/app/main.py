@@ -4,10 +4,13 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from app.api.router import router as api_router
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.db.database import Base, engine
 import app.models  # noqa: F401 — ensures all models are registered with Base.metadata
 from app.services.rag_service import RAGService
@@ -63,6 +66,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Rate limiting
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # Routers
     app.include_router(api_router, prefix=settings.API_PREFIX)

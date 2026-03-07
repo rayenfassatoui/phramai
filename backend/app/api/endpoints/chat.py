@@ -1,10 +1,11 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.api_key import get_tenant_from_api_key
+from app.core.rate_limit import RATE_READ, RATE_WRITE, limiter
 from app.db.database import get_db
 from app.schemas.chat import (
     ChatMessageCreate,
@@ -31,7 +32,9 @@ def get_chat_service(
 
 
 @router.post("/sessions", response_model=ChatSessionResponse, status_code=201)
+@limiter.limit(RATE_WRITE)
 async def create_session(
+    request: Request,
     body: ChatSessionCreate,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     chat_service: Annotated[ChatService, Depends(get_chat_service)],
@@ -40,7 +43,9 @@ async def create_session(
 
 
 @router.get("/sessions", response_model=ChatSessionList)
+@limiter.limit(RATE_READ)
 async def list_sessions(
+    request: Request,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     chat_service: Annotated[ChatService, Depends(get_chat_service)],
     limit: int = Query(default=20, ge=1, le=100),
@@ -54,7 +59,9 @@ async def list_sessions(
 
 
 @router.get("/sessions/{session_id}", response_model=ChatSessionWithMessages)
+@limiter.limit(RATE_READ)
 async def get_session(
+    request: Request,
     session_id: str,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     chat_service: Annotated[ChatService, Depends(get_chat_service)],
@@ -66,7 +73,9 @@ async def get_session(
 
 
 @router.patch("/sessions/{session_id}", response_model=ChatSessionResponse)
+@limiter.limit(RATE_WRITE)
 async def update_session_title(
+    request: Request,
     session_id: str,
     body: ChatSessionCreate,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
@@ -79,7 +88,9 @@ async def update_session_title(
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
+@limiter.limit(RATE_WRITE)
 async def delete_session(
+    request: Request,
     session_id: str,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     chat_service: Annotated[ChatService, Depends(get_chat_service)],
@@ -97,7 +108,9 @@ async def delete_session(
     response_model=ChatMessageResponse,
     status_code=201,
 )
+@limiter.limit(RATE_WRITE)
 async def add_message(
+    request: Request,
     session_id: str,
     body: ChatMessageCreate,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
@@ -113,7 +126,9 @@ async def add_message(
     "/sessions/{session_id}/messages",
     response_model=list[ChatMessageResponse],
 )
+@limiter.limit(RATE_READ)
 async def get_messages(
+    request: Request,
     session_id: str,
     tenant_id: Annotated[str, Depends(get_tenant_from_api_key)],
     chat_service: Annotated[ChatService, Depends(get_chat_service)],
