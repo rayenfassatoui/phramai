@@ -1,371 +1,188 @@
 "use client";
 
-import * as React from "react";
-import dynamic from "next/dynamic";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { IconActivity, IconMessage, IconLoader2 } from "@tabler/icons-react";
-import { ChatMessage } from "@/components/chat/ChatMessage";
-import { ChatInput } from "@/components/chat/ChatInput";
-import { SourceList } from "@/components/chat/SourceList";
-import { TenantSelector } from "@/components/chat/TenantSelector";
-import { MetricsPanel } from "@/components/chat/MetricsPanel";
-import { ChatHistory } from "@/components/chat/ChatHistory";
-import { ConfidenceScore } from "@/components/chat/ConfidenceScore";
-import { ExportButtons } from "@/components/chat/ExportButtons";
-import { PDFUpload } from "@/components/chat/PDFUpload";
-import { DocumentLibrary } from "@/components/chat/DocumentLibrary";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { ArrowRight, Shield, Zap, Search, Layers, ChevronRight, Lock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
-// SSR-disabled import — react-pdf uses window/canvas at import time
-const CitationSidebar = dynamic(
-  () => import("@/components/chat/CitationSidebar").then((m) => m.CitationSidebar),
-  { ssr: false },
-);
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { useQueryClient } from "@tanstack/react-query";
-import { createChatSession, addChatMessage, getChatSession } from "@/services/api";
-import type { ChatSessionResponse, ChatMessageResponse } from "@/services/api";
-
-const TENANT_THEMES = {
-  "tenant-1": {
-    primary: "oklch(0.55 0.17 155)",
-    primaryForeground: "oklch(0.98 0.01 155)",
-    label: "Tenant 1",
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.15,
+      delayChildren: 0.2,
+    },
   },
-  "tenant-2": {
-    primary: "oklch(0.55 0.15 250)",
-    primaryForeground: "oklch(0.98 0.01 250)",
-    label: "Tenant 2",
-  },
-  "tenant-3": {
-    primary: "oklch(0.55 0.20 27)",
-    primaryForeground: "oklch(0.98 0.01 27)",
-    label: "Tenant 3",
-  },
-} as const;
+};
 
-const TENANTS = [
-  { id: "tenant-1", label: "Tenant 1", key: "tenant-1-secret-key" },
-  { id: "tenant-2", label: "Tenant 2", key: "tenant-2-secret-key" },
-  { id: "tenant-3", label: "Tenant 3", key: "tenant-3-secret-key" },
-] as const;
+const itemVariants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: { y: 0, opacity: 1, transition: { type: "spring" as const, stiffness: 100, damping: 20 } },
+};
 
-interface Source { content: string; metadata: Record<string, string>; index?: number; }
-interface CustomDataPart { type: "data-custom"; data: { type: string; sources?: Source[]; confidence_score?: number; duration_ms?: number }; }
-
-export default function ChatPage() {
-  const [selectedTenantId, setSelectedTenantId] = React.useState<string>(TENANTS[0].id);
-  const selectedTenant = TENANTS.find(t => t.id === selectedTenantId) || TENANTS[0];
-  const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
-  const queryClient = useQueryClient();
-  const sessionIdRef = React.useRef<string | null>(null);
-  const persistedCountRef = React.useRef(0);
-  const messagesTenantKeyRef = React.useRef<string>(selectedTenant.key);
-  const { messages, setMessages, sendMessage, status } = useChat({ transport: new DefaultChatTransport({ api: "/api/chat" }) });
-  const isStreaming = status === "submitted" || status === "streaming";
-  const [citationSource, setCitationSource] = React.useState<Source | null>(null);
-
-  // Close citation sidebar when tenant changes
-  React.useEffect(() => {
-    setCitationSource(null);
-  }, [selectedTenantId]);
-
-  // Reset all chat state when tenant changes
-  React.useEffect(() => {
-    setMessages([]);
-    sessionIdRef.current = null;
-    persistedCountRef.current = 0;
-    setActiveSessionId(null);
-    // NOTE: messagesTenantKeyRef is intentionally NOT updated here.
-    // It retains the OLD tenant key so the persistence effect can detect
-    // that the current messages belong to a different tenant and bail out.
-    // It only gets updated when messages are genuinely created for the new tenant.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTenantId]);
-
-  // Persist messages to backend session after streaming completes
-  React.useEffect(() => {
-    if (isStreaming || messages.length === 0) return;
-    const newMessages = messages.slice(persistedCountRef.current);
-    if (newMessages.length === 0) return;
-
-    // Guard: only persist if messages belong to the current tenant.
-    // After a tenant switch, messagesTenantKeyRef still holds the OLD key
-    // while selectedTenant.key is the NEW key — mismatch blocks persistence.
-    if (messagesTenantKeyRef.current !== selectedTenant.key) return;
-
-    const apiKey = selectedTenant.key;
-
-    const persist = async () => {
-      try {
-        // Auto-create session if none exists
-        if (!sessionIdRef.current) {
-          const firstUserMsg = newMessages.find(m => m.role === "user");
-          const title = firstUserMsg
-            ? (firstUserMsg.parts?.find((p) => (p as { type: string }).type === "text") as { text?: string } | undefined)?.text?.slice(0, 60) ?? "New Chat"
-            : "New Chat";
-          const session = await createChatSession(apiKey, title);
-
-          // Bail if tenant changed during the async call
-          if (messagesTenantKeyRef.current !== apiKey) return;
-
-          sessionIdRef.current = session.id;
-          setActiveSessionId(session.id);
-          queryClient.invalidateQueries({ queryKey: ["chatSessions", apiKey] });
-        }
-
-        // Persist each new message
-        for (const msg of newMessages) {
-          if (messagesTenantKeyRef.current !== apiKey) return;
-
-          const textContent = msg.parts
-            ?.filter((p) => (p as { type: string }).type === "text")
-            .map((p) => (p as { type: string; text: string }).text)
-            .join("") ?? "";
-          const customPart = msg.parts?.find((p) => (p as { type: string }).type === "data-custom") as CustomDataPart | undefined;
-          const sources = customPart?.data?.sources ?? null;
-          const confidence = customPart?.data?.confidence_score ?? null;
-          await addChatMessage(sessionIdRef.current, apiKey, msg.role, textContent, sources, confidence);
-        }
-        persistedCountRef.current = messages.length;
-      } catch {
-        // Silently fail — persistence is best-effort
-      }
-    };
-    persist();
-  }, [isStreaming, messages, selectedTenant.key, queryClient]);
-
-  const handleSendMessage = (text: string) => { messagesTenantKeyRef.current = selectedTenant.key; sendMessage({ text }, { body: { apiKey: selectedTenant.key } }); };
-
-  const handleSelectSession = async (session: ChatSessionResponse) => {
-    setActiveSessionId(session.id);
-    try {
-      const fullSession = await getChatSession(session.id, selectedTenant.key);
-      const uiMessages = fullSession.messages.map((msg: ChatMessageResponse) => {
-        const parts: Array<{ type: "text"; text: string } | { type: "data-custom"; data: Record<string, unknown> }> = [
-          { type: "text" as const, text: msg.content },
-        ];
-        if (msg.role === "assistant" && (msg.sources || msg.confidence_score !== null)) {
-          parts.push({
-            type: "data-custom" as const,
-            data: {
-              type: "sources",
-              sources: msg.sources ?? [],
-              confidence_score: msg.confidence_score ?? 0,
-            },
-          });
-        }
-        return {
-          id: String(msg.id),
-          role: msg.role as "user" | "assistant",
-          parts,
-        };
-      });
-      setMessages(uiMessages);
-      sessionIdRef.current = session.id;
-      persistedCountRef.current = uiMessages.length;
-      messagesTenantKeyRef.current = selectedTenant.key;
-    } catch {
-      // If fetch fails, still show the session as selected but with empty messages
-    }
-  };
-
-  const handleNewSession = (session: ChatSessionResponse) => {
-    sessionIdRef.current = session.id;
-    persistedCountRef.current = 0;
-    setActiveSessionId(session.id);
-    messagesTenantKeyRef.current = selectedTenant.key;
-  };
-
-  // Extract confidence score from the last assistant message
-  const getConfidenceForMessage = (message: typeof messages[number]): number | null => {
-    if (message.role !== "assistant") return null;
-    for (const part of message.parts ?? []) {
-      const p = part as CustomDataPart;
-      if (p.type === "data-custom" && p.data?.type === "sources" && typeof p.data.confidence_score === "number") {
-        return p.data.confidence_score;
-      }
-      if (p.type === "data-custom" && p.data?.type === "metadata" && typeof p.data.confidence_score === "number") {
-        return p.data.confidence_score;
-      }
-    }
-    return null;
-  };
-
-  // Handle citation click — find the source by index from current messages' sources
-  const handleCitationClick = React.useCallback((citationIndex: number) => {
-    // Collect all sources from all assistant messages
-    for (const msg of messages) {
-      if (msg.role !== "assistant") continue;
-      for (const part of msg.parts ?? []) {
-        const p = part as CustomDataPart;
-        if (p.type === "data-custom" && p.data?.type === "sources" && p.data.sources) {
-          const source = p.data.sources.find((s: Source) => s.index === citationIndex);
-          if (source) {
-            setCitationSource(source);
-            return;
-          }
-        }
-      }
-    }
-    // Fallback: use array index (1-based)
-    for (const msg of messages) {
-      if (msg.role !== "assistant") continue;
-      for (const part of msg.parts ?? []) {
-        const p = part as CustomDataPart;
-        if (p.type === "data-custom" && p.data?.type === "sources" && p.data.sources) {
-          const source = p.data.sources[citationIndex - 1];
-          if (source) {
-            setCitationSource(source);
-            return;
-          }
-        }
-      }
-    }
-  }, [messages]);
-
-  const tenantTheme = TENANT_THEMES[selectedTenantId as keyof typeof TENANT_THEMES];
-
-  const themeStyle = React.useMemo(() => ({
-    "--primary": tenantTheme.primary,
-    "--primary-foreground": tenantTheme.primaryForeground,
-    "--sidebar-primary": tenantTheme.primary,
-    "--sidebar-primary-foreground": tenantTheme.primaryForeground,
-    "--chart-1": tenantTheme.primary,
-  } as React.CSSProperties), [tenantTheme]);
-
+export default function LandingPage() {
   return (
-    <div style={themeStyle} className="flex h-screen w-full flex-col bg-background text-foreground md:flex-row overflow-hidden">
-      <aside className="hidden border-r border-border bg-muted/10 md:flex md:w-80 md:flex-col">
-        <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-6">
-          <div className="flex items-center gap-2 font-semibold">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm"><IconActivity className="h-5 w-5" /></div>
-            <span className="text-sm tracking-tight">Pharma AI</span>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
-            <TenantSelector value={selectedTenantId} onValueChange={setSelectedTenantId} tenants={TENANTS} />
-            <Separator />
-            <PDFUpload apiKey={selectedTenant.key} />
-            <Separator />
-            <ChatHistory
-              apiKey={selectedTenant.key}
-              activeSessionId={activeSessionId}
-              onSelectSession={handleSelectSession}
-              onNewSession={handleNewSession}
-            />
-            <Separator />
-            <DocumentLibrary apiKey={selectedTenant.key} />
-            <Separator />
-            <MetricsPanel tenantId={selectedTenantId} apiKey={selectedTenant.key} />
-          </div>
-        </div>
-        <div className="p-4 text-[10px] text-center text-muted-foreground border-t border-border bg-muted/20">Regulatory Assistant v1.0 &bull; Confidential</div>
-      </aside>
+    <div className="relative min-h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground overflow-hidden font-sans">
+      {/* Background Ambient Glows */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-[20%] left-1/2 -z-10 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/20 opacity-30 blur-[120px]" />
+        <div className="absolute -bottom-[20%] -left-[10%] -z-10 h-[500px] w-[500px] rounded-full bg-primary/10 opacity-40 blur-[100px]" />
+      </div>
 
-      <ResizablePanelGroup orientation="horizontal" className="flex-1 overflow-hidden">
-        <ResizablePanel defaultSize={citationSource ? "65%" : "100%"} minSize="30%" className="flex">
-          <main className="flex flex-1 flex-col overflow-hidden bg-background relative h-full">
-            <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-              <div className="flex items-center gap-2 md:hidden">
-                <div className="flex items-center gap-2 font-semibold"><IconActivity className="h-5 w-5 text-primary" /><span className="text-sm">Pharma AI</span></div>
-              </div>
-              <div className="flex items-center gap-2">
-                <ExportButtons messages={messages} />
-                <div className="md:hidden">
-                  <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
-                    <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>{TENANTS.map((t) => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}</SelectContent>
-                  </Select>
+      <main className="relative z-10 mx-auto max-w-7xl px-6 lg:px-8">
+        {/* Ultramodern Floating Navigation */}
+        <motion.header 
+          initial={{ y: -40, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed top-6 left-1/2 z-50 flex w-[calc(100%-3rem)] max-w-5xl -translate-x-1/2 items-center justify-between rounded-full border border-border/50 bg-background/60 px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-2xl saturate-150"
+        >
+          <div className="flex items-center gap-3 pl-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[inset_0_-2px_4px_rgba(0,0,0,0.2)]">
+              <Zap className="h-4 w-4" />
+            </div>
+            <span className="font-bold tracking-tight text-foreground">PhramAI.</span>
+          </div>
+          <nav className="flex items-center gap-2 sm:gap-4">
+            <ThemeToggle />
+            <Link href="/chat">
+              <Button className="h-9 rounded-full px-7 text-sm tracking-wide shadow-[0_0_20px_-5px_hsl(var(--primary))] transition-all hover:scale-105 hover:shadow-[0_0_30px_-5px_hsl(var(--primary))]">
+                System Access
+              </Button>
+            </Link>
+          </nav>
+        </motion.header>
+
+        {/* Hero Section */}
+        <section className="flex flex-col items-center justify-center pb-24 pt-32 text-center md:pb-32 md:pt-40">
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="flex max-w-4xl flex-col items-center gap-8"
+          >
+            <motion.div variants={itemVariants} className="inline-flex items-center rounded-full border border-border/50 bg-muted/30 px-3 py-1 text-sm font-medium text-muted-foreground backdrop-blur-md">
+              <span className="flex h-2 w-2 rounded-full bg-primary mr-2 animate-pulse" />
+              Regulatory Intelligence v2.0
+            </motion.div>
+
+            <motion.h1 variants={itemVariants} className="text-balance text-5xl font-extrabold tracking-tighter sm:text-7xl md:text-8xl">
+              Navigate compliance with <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">neural precision.</span>
+            </motion.h1>
+
+            <motion.p variants={itemVariants} className="max-w-2xl text-lg text-muted-foreground sm:text-xl leading-relaxed">
+              Transform raw regulatory data into actionable insights. Secure, multi-tenant, and designed for rigorous enterprise environments.
+            </motion.p>
+
+            <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 mt-4 w-full sm:w-auto">
+              <Link href="/chat">
+                <Button size="lg" className="w-full sm:w-auto group h-14 rounded-full px-8 text-base font-medium shadow-[0_0_40px_-10px_hsl(var(--primary))] transition-all hover:scale-105 hover:shadow-[0_0_60px_-15px_hsl(var(--primary))]">
+                  Enter Workspace
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </Button>
+              </Link>
+              <Link href="#architecture">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto h-14 rounded-full px-8 text-base font-medium border-border/50 hover:bg-muted/50 backdrop-blur-sm">
+                  View Architecture
+                </Button>
+              </Link>
+            </motion.div>
+          </motion.div>
+        </section>
+
+        {/* Asymmetrical Bento Box Features */}
+        <section className="pb-32" id="architecture">
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.7, ease: "easeOut" }}
+            className="grid grid-cols-1 md:grid-cols-3 gap-6"
+          >
+            {/* Large Card */}
+            <div className="group relative overflow-hidden rounded-3xl border border-border/50 bg-card p-8 md:col-span-2 transition-all hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 h-48 w-48 rounded-full bg-primary/5 blur-3xl transition-all group-hover:bg-primary/10" />
+              <div className="relative z-10 flex h-full flex-col justify-between gap-12">
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary ring-1 ring-primary/20">
+                  <Search className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-3xl font-bold tracking-tight mb-3">Semantic Discovery</h3>
+                  <p className="max-w-md text-muted-foreground text-lg">
+                    Interrogate thousands of compliance documents instantly. Exact paragraph citations guarantee complete traceability.
+                  </p>
                 </div>
               </div>
-            </header>
-
-            <div className="flex-1 overflow-hidden relative">
-              <ScrollArea className="h-full">
-                <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-32 md:p-8 md:pb-32">
-                  {messages.length === 0 ? (
-                    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-6 text-center opacity-0 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-forwards">
-                      <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/5 shadow-inner"><IconMessage className="h-10 w-10 text-primary/60" /></div>
-                      <div className="max-w-[420px] space-y-3">
-                        <h3 className="text-xl font-semibold tracking-tight text-foreground">Welcome to {selectedTenant.label}</h3>
-                        <p className="text-sm text-muted-foreground leading-relaxed text-balance">Ask questions about regulatory documents, guidelines, and compliance standards. I can search across millions of records to find precise answers.</p>
-                      </div>
-                    </div>
-                  ) : (
-                    messages.map((message, index) => {
-                      const customPart = message.parts?.find((p) => (p as { type: string }).type === "data-custom") as { type: "data-custom"; data: { type: string; sources: Source[] } } | undefined;
-                      const sources = customPart?.data?.sources ?? [];
-                      const confidence = getConfidenceForMessage(message);
-                      return (
-                        <div key={message.id} className="flex flex-col gap-3 group animate-in fade-in slide-in-from-bottom-2 duration-300">
-                          <ChatMessage message={message} isStreaming={index === messages.length - 1 && isStreaming} onCitationClick={handleCitationClick} />
-                          {message.role === "assistant" && (
-                            <div className="pl-4 md:pl-16 pr-4 flex items-center gap-2 flex-wrap">
-                              {confidence !== null && confidence > 0 && <ConfidenceScore score={confidence} />}
-                              {sources.length > 0 && <SourceList sources={sources} apiKey={selectedTenant.key} />}
-                            </div>
-                          )}
-                          {message.role === "assistant" && !(index === messages.length - 1 && isStreaming) && sources.length === 0 && (!message.parts || message.parts.every((p) => (p as { type: string }).type !== "text" || !(p as { type: string; text: string }).text?.trim())) && (
-                            <div className="pl-4 md:pl-16 pr-4">
-                              <p className="text-sm text-muted-foreground italic">No relevant regulatory information found for this query. Try rephrasing your question or using more specific terminology.</p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </ScrollArea>
-              <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background via-background/80 to-transparent pointer-events-none" />
             </div>
 
-            <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 z-20">
-              <div className="mx-auto max-w-3xl">
-                <div className="relative group">
-                  <div className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-primary/20 to-primary/10 opacity-0 group-hover:opacity-100 transition-opacity blur duration-500" />
-                  <div className="relative bg-background rounded-2xl shadow-xl shadow-black/5 ring-1 ring-border/50">
-                    <ChatInput onSubmit={handleSendMessage} disabled={isStreaming} placeholder={`Ask ${selectedTenant.label} a question...`} />
+            {/* Small Card 1 */}
+            <div className="group relative overflow-hidden rounded-3xl border border-border/50 bg-card p-8 transition-all hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5">
+              <div className="relative z-10 flex h-full flex-col justify-between gap-12">
+                <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center text-foreground ring-1 ring-border">
+                  <Shield className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold tracking-tight mb-2">Absolute Isolation</h3>
+                  <p className="text-muted-foreground">
+                    Strict multi-tenant architecture ensures data boundaries are never crossed.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Small Card 2 */}
+            <div className="group relative overflow-hidden rounded-3xl border border-border/50 bg-card p-8 transition-all hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5">
+              <div className="relative z-10 flex h-full flex-col justify-between gap-12">
+                <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center text-foreground ring-1 ring-border">
+                  <Layers className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold tracking-tight mb-2">Modular Core</h3>
+                  <p className="text-muted-foreground">
+                    Built on scalable, stateless endpoints compatible with modern cloud infra.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Wide Card */}
+            <div className="group relative overflow-hidden rounded-3xl border border-border/50 bg-card p-8 md:col-span-2 transition-all hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5">
+              <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-8 h-full">
+                <div className="flex flex-col gap-6 max-w-sm">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary ring-1 ring-primary/20">
+                    <Lock className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold tracking-tight mb-2">Enterprise Grade</h3>
+                    <p className="text-muted-foreground">
+                      SOC2 ready. End-to-end encryption. Uncompromising state persistence.
+                    </p>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-muted-foreground/60">
-                  {isStreaming && <IconLoader2 className="h-3 w-3 animate-spin text-primary" />}<span>AI-generated content can be inaccurate. Verify important information.</span>
-                </div>
+                <Button variant="ghost" className="w-fit p-0 hover:bg-transparent text-primary group-hover:text-primary/80 transition-colors">
+                  Read security whitepaper <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
               </div>
             </div>
-          </main>
-        </ResizablePanel>
+          </motion.div>
+        </section>
 
-        {citationSource && (
-          <>
-            <ResizableHandle withHandle className="hidden md:flex" />
-            <ResizablePanel defaultSize="35%" minSize="15%" maxSize="80%" className="hidden md:flex border-l border-border">
-              <CitationSidebar
-                open={citationSource !== null}
-                onClose={() => setCitationSource(null)}
-                source={citationSource}
-                apiKey={selectedTenant.key}
-              />
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
-
-      {/* Mobile: full-screen overlay for citation sidebar */}
-      {citationSource && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
-          <CitationSidebar
-            open={citationSource !== null}
-            onClose={() => setCitationSource(null)}
-            source={citationSource}
-            apiKey={selectedTenant.key}
-          />
-        </div>
-      )}
+        {/* Footer */}
+        <footer className="border-t border-border/40 py-12 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4" />
+            <span className="font-semibold text-foreground">PhramAI.</span>
+          </div>
+          <p>Confidential and Proprietary. Engineered for precision.</p>
+          <div className="flex gap-6">
+            <Link href="#" className="hover:text-foreground transition-colors">Privacy</Link>
+            <Link href="#" className="hover:text-foreground transition-colors">Terms</Link>
+            <Link href="#" className="hover:text-foreground transition-colors">System Status</Link>
+          </div>
+        </footer>
+      </main>
     </div>
   );
 }
